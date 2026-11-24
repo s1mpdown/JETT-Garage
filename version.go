@@ -20,9 +20,15 @@ func isFeatureRelease(v string) bool {
 	return versionParts(v)[2] == 0
 }
 
+// whatsNewFor is the one version whose What's New notice may show.
+// The ack is keyed to the FULL version: the box appears only when the
+// running build is exactly this version and the user hasn't dismissed
+// it for this version. Other versions stay quiet.
+const whatsNewFor = "1.3.4"
+
 // updateRepo is where the app checks for new builds. It is a public
 // repo, so the check and the download need no login.
-const updateRepo = "s1mpdown/LMU-Setup-Builder"
+const updateRepo = "s1mpdown/JETT-Garage"
 
 // updateAssetName is the exe file attached to each GitHub release.
 const updateAssetName = "LMU-Setup-Builder.exe"

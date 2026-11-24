@@ -106,8 +106,72 @@ func TestUSTracksLookup(t *testing.T) {
 			t.Errorf("%s plan wings quali/race = %d/%d, want %d/%d", tr.Name, q.Wing, r.Wing, c.wingQ, c.wingR)
 		}
 	}
-	if len(trackTable) != 16 {
-		t.Errorf("trackTable has %d tracks, want 16", len(trackTable))
+	if len(trackTable) != 18 {
+		t.Errorf("trackTable has %d tracks, want 18", len(trackTable))
+	}
+}
+
+// v1.3.4: Barcelona and Paul Ricard (ELMS) join the table as indexes
+// 16/17. Folder variants come from the game's own folder names; the
+// "Sao Paulo" guard pins the switch order — Interlagos keys on "paulo"
+// and must keep winning over Paul Ricard's "paul".
+func TestELMSTracksLookup(t *testing.T) {
+	cases := []struct {
+		folder string
+		km     float64
+		wingQ  int
+		wingR  int
+	}{
+		{"barcelona", 4.657, 3, 3},
+		{"Circuit De Barcelona", 4.657, 3, 3},
+		{"paulricard", 5.770, 1, 2},
+		{"Paul Ricard", 5.770, 1, 2},
+		{"Le Castellet", 5.770, 1, 2},
+	}
+	for _, c := range cases {
+		tr := lookupTrack(c.folder)
+		if tr.Name == "Unknown track" || !approx(tr.Km, c.km, 0.001) {
+			t.Errorf("lookupTrack(%q) = %q %.3f km, want %.3f km", c.folder, tr.Name, tr.Km, c.km)
+		}
+		if tr.WingQ != c.wingQ || tr.WingR != c.wingR {
+			t.Errorf("lookupTrack(%q) wings Q/R = %d/%d, want %d/%d", c.folder, tr.WingQ, tr.WingR, c.wingQ, c.wingR)
+		}
+		// Lexus WingBase is 0, so the plan wing is the track wing itself.
+		q := lexusPlan(tr, Session{Kind: "quali", VECap: 100}, "Balanced")
+		r := lexusPlan(tr, Session{Kind: "race30", Minutes: 30, VECap: 100}, "Balanced")
+		if q.Wing != c.wingQ || r.Wing != c.wingR {
+			t.Errorf("%s plan wings quali/race = %d/%d, want %d/%d", tr.Name, q.Wing, r.Wing, c.wingQ, c.wingR)
+		}
+	}
+	if tr := lookupTrack("Sao Paulo"); tr.Name != "Interlagos" {
+		t.Errorf("lookupTrack(%q) = %q, want Interlagos", "Sao Paulo", tr.Name)
+	}
+}
+
+// v1.3.4: the four re-anchored cars carry Jett-derived bias points, and
+// every derived profile (index >= 2) keeps the fleet rule
+// RaceBias - QualiBias == 0.5.
+func TestDerivedAnchors(t *testing.T) {
+	want := map[string][2]float64{
+		"Z06":  {49.5, 50.0},
+		"F296": {50.5, 51.0},
+		"HUR":  {49.0, 49.5},
+		"P992": {47.5, 48.0},
+	}
+	for _, p := range carProfiles {
+		if w, ok := want[p.Short]; ok {
+			if p.QualiBias != w[0] || p.RaceBias != w[1] {
+				t.Errorf("%s anchors = %.1f/%.1f, want %.1f/%.1f", p.Short, p.QualiBias, p.RaceBias, w[0], w[1])
+			}
+		}
+	}
+	for i, p := range carProfiles {
+		if i < 2 {
+			continue // telemetry-calibrated pair: their own deltas
+		}
+		if d := p.RaceBias - p.QualiBias; !approx(d, 0.5, 1e-9) {
+			t.Errorf("profile %d (%s) race-quali bias delta = %.2f, want 0.5", i, p.Short, d)
+		}
 	}
 }
 

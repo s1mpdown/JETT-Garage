@@ -49,6 +49,12 @@ var trackTable = []TrackInfo{
 	{"Laguna Seca", 3.602, 2, 3},
 	{"Road Atlanta", 4.088, 2, 2},
 	{"Long Beach", 3.167, 3, 3},
+	// ELMS tracks (v1.3.4): Barcelona (Circuit de Barcelona-Catalunya GP
+	// layout) and Paul Ricard (Le Castellet, LMU's no-Mistral-chicane
+	// 1A-V2 layout — 5.770 km per LMU's own circuit page). Wing starting
+	// points: high for Barcelona, low for Ricard's long Mistral straight.
+	{"Barcelona", 4.657, 3, 3},
+	{"Paul Ricard", 5.770, 1, 2},
 }
 
 var defaultTrack = TrackInfo{"Unknown track", 5.70, 2, 2}
@@ -99,6 +105,10 @@ func lookupTrack(folder string) TrackInfo {
 		return trackTable[14]
 	case strings.Contains(f, "long beach") || strings.Contains(f, "longbeach") || strings.Contains(f, "long_beach"):
 		return trackTable[15]
+	case strings.Contains(f, "barcelona"):
+		return trackTable[16]
+	case strings.Contains(f, "ricard") || strings.Contains(f, "paul") || strings.Contains(f, "castellet"):
+		return trackTable[17]
 	}
 	if t, ok := match(); ok {
 		return t
@@ -161,13 +171,19 @@ var lexusProfile = CarProfile{
 	RadQ: 10, RadR: 0, WingBase: 0,
 }
 
-// Hub-reference profiles: base templates and calibration pulled from
-// Ultimate Setup Hub community setups (public API). Bias scales were
-// derived from pairs of real files per car (all 0.25/click except the
-// Lexus at 0.3) and re-verified against current files on 2026-11-05.
-// Anchor points (bias, electronics, preload) were refreshed 2026-11-05
-// to the medians of the three most-downloaded hub setups per car.
-// These are community starting points, not pro-team data.
+// Jett-derived profiles: base templates originally pulled from Ultimate
+// Setup Hub community setups (public API). Bias scales were derived
+// from pairs of real files per car (all 0.25/click except the Lexus at
+// 0.3) and re-verified against current files on 2026-11-05. As of
+// v1.3.4 the bias anchors are Jett-derived, no longer community
+// medians: each is set from the car's layout and weight distribution
+// plus the braking-stability principles proven on the two
+// telemetry-calibrated cars (Lexus, McLaren). The mid-engine cars' old
+// community medians sat well above the calibrated McLaren's working
+// bias and were pulled into the layout-consistent band; the rear-engine
+// Porsche went slightly rearward. Race bias = quali bias + 0.5
+// stability delta across the fleet. Cars without telemetry are
+// labelled DERIVED, not measured.
 var astonProfile = CarProfile{
 	Name: "Aston Martin Vantage GT3", Short: "AMR",
 	BiasIdxAt: 29, BiasValAt: 49.8, BiasStep: 0.25,
@@ -189,7 +205,7 @@ var bmwProfile = CarProfile{
 var corvetteProfile = CarProfile{
 	Name: "Corvette Z06 GT3.R", Short: "Z06",
 	BiasIdxAt: 22, BiasValAt: 51.5, BiasStep: 0.25,
-	QualiBias: 51.0, RaceBias: 51.5,
+	QualiBias: 49.5, RaceBias: 50.0,
 	TCMap: 4, TCCut: 4, SlipQ: 8, SlipR: 8, ABS: 9,
 	PreloadQ: 38, PreloadR: 38, PreloadUnit: "",
 	RadQ: 0, RadR: 0, WingBase: 0,
@@ -198,7 +214,7 @@ var corvetteProfile = CarProfile{
 var ferrariProfile = CarProfile{
 	Name: "Ferrari 296 GT3", Short: "F296",
 	BiasIdxAt: 24, BiasValAt: 51.0, BiasStep: 0.25,
-	QualiBias: 52.5, RaceBias: 53.0,
+	QualiBias: 50.5, RaceBias: 51.0,
 	TCMap: 5, TCCut: 4, SlipQ: 8, SlipR: 8, ABS: 9,
 	PreloadQ: 80, PreloadR: 80, PreloadUnit: " Nm",
 	RadQ: 0, RadR: 0, WingBase: 1,
@@ -216,7 +232,7 @@ var fordProfile = CarProfile{
 var lamboProfile = CarProfile{
 	Name: "Lamborghini Huracán GT3", Short: "HUR",
 	BiasIdxAt: 30, BiasValAt: 49.5, BiasStep: 0.25,
-	QualiBias: 49.5, RaceBias: 50.0,
+	QualiBias: 49.0, RaceBias: 49.5,
 	TCMap: 4, TCCut: 4, SlipQ: 6, SlipR: 6, ABS: 9,
 	PreloadQ: 150, PreloadR: 150, PreloadUnit: "",
 	RadQ: 0, RadR: 0, WingBase: 0,
@@ -234,7 +250,7 @@ var amgProfile = CarProfile{
 var porscheProfile = CarProfile{
 	Name: "Porsche 992 GT3 R", Short: "P992",
 	BiasIdxAt: 42, BiasValAt: 46.5, BiasStep: 0.25,
-	QualiBias: 48.0, RaceBias: 48.5,
+	QualiBias: 47.5, RaceBias: 48.0,
 	TCMap: 5, TCCut: 5, SlipQ: 8, SlipR: 8, ABS: 9,
 	PreloadQ: 115, PreloadR: 115, PreloadUnit: "",
 	RadQ: 0, RadR: 0, WingBase: 0,
@@ -250,7 +266,7 @@ var mclarenProfile = CarProfile{
 }
 
 // carProfiles is the built-in list, parallel to carTemplates in main.go.
-// Indexes 0-1 are Jett-calibrated (pro sources); 2+ are hub references.
+// Indexes 0-1 are Jett-calibrated (pro sources); 2+ are Jett-derived.
 var carProfiles = []CarProfile{
 	lexusProfile, mclarenProfile,
 	astonProfile, bmwProfile, corvetteProfile, ferrariProfile,
@@ -417,14 +433,15 @@ func writeSVM(path string, lines []string) error {
 	return os.WriteFile(path, []byte(strings.Join(lines, "\r\n")+"\r\n"), 0644)
 }
 
-// setupSlot returns "Q" or "R" for a generated setup file name
-// (…_Q.svm / …_R.svm), or "" when it can't tell.
+// setupSlot returns "Q" or "R" for a generated setup file name, or ""
+// when it can't tell. Both naming generations are recognised: the
+// v1.3.4+ …-Q.svm / …-R.svm stems and the legacy …_Q.svm / …_R.svm.
 func setupSlot(name string) string {
 	stem := strings.TrimSuffix(name, filepath.Ext(name))
-	if strings.HasSuffix(stem, "_Q") {
+	if strings.HasSuffix(stem, "-Q") || strings.HasSuffix(stem, "_Q") {
 		return "Q"
 	}
-	if strings.HasSuffix(stem, "_R") {
+	if strings.HasSuffix(stem, "-R") || strings.HasSuffix(stem, "_R") {
 		return "R"
 	}
 	return ""
@@ -453,7 +470,7 @@ func replaceOlderSetups(dest string) []string {
 		if e.IsDir() || name == filepath.Base(dest) {
 			continue
 		}
-		if !strings.HasPrefix(name, "Jett_") || !strings.HasSuffix(strings.ToLower(name), ".svm") {
+		if !strings.HasPrefix(strings.ToLower(name), "jett_") || !strings.HasSuffix(strings.ToLower(name), ".svm") {
 			continue
 		}
 		if setupSlot(name) != slot {

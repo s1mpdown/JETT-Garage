@@ -67,7 +67,7 @@ type Config struct {
 	PanelScale   map[string]float64 `json:"panel_scale,omitempty"`   // v1.3 per-panel free scale
 	OverlayScale float64            `json:"overlay_scale,omitempty"` // pre-1.3 global scale (migration seed)
 	TeleDir      string             `json:"tele_dir,omitempty"`
-	WhatsNewAck  string             `json:"whatsnew_ack,omitempty"` // last x.y.0 notice dismissed
+	WhatsNewAck  string             `json:"whatsnew_ack,omitempty"` // full x.y.z of the What's New notice dismissed
 }
 
 func currentCfg() Config {
@@ -185,7 +185,7 @@ func refreshCars() {
 	carKinds = []int{}
 	carPaths = []string{}
 	for i, p := range carProfiles {
-		suffix := " — hub reference"
+		suffix := " — Jett derived"
 		if i < 2 {
 			suffix = " — Jett calibrated"
 		}
@@ -299,7 +299,7 @@ func generate() {
 	var defName string
 
 	if carKinds[carIdx] < 100 {
-		// Built-in cars (Jett-calibrated or hub reference): fully generated
+		// Built-in cars (Jett-calibrated or Jett-derived): fully generated
 		prof, tmpl := carProfiles[carKinds[carIdx]], carTemplates[carKinds[carIdx]]
 		p := carPlan(prof, track, sess, feel)
 		note := fmt.Sprintf("Jett %s %s — Powered by Jett", trackFolder, kindName)
@@ -309,7 +309,7 @@ func generate() {
 			fmt.Sprintf("Track: %s · Session: %s · Feel: %s", track.Name, sessionCB.Text(), feel),
 			"",
 		}, p.Summary...)
-		defName = fmt.Sprintf("Jett_%s_%s_%s.svm", prof.Short, strings.ToUpper(sanitize(trackFolder)), kindName)
+		defName = fmt.Sprintf("JETT_%s-%s.svm", prof.Short, kindName)
 	} else {
 		// Any other car: his own file is the chassis; Jett does session math.
 		raw, err := os.ReadFile(carPaths[carIdx])
@@ -650,7 +650,7 @@ func main() {
 		}
 	}
 	dismissWhatsNew := func() {
-		whatsNewAck = versionMinor(AppVersion)
+		whatsNewAck = AppVersion
 		saveCfg(currentCfg())
 		if whatsNewBox != nil {
 			whatsNewBox.SetVisible(false)
@@ -714,7 +714,7 @@ func main() {
 						// Short, manually broken lines: preview1 used one
 						// ~700-character line, whose minimum width dragged
 						// the whole window ultrawide-wide.
-						Text:      "WHAT'S NEW IN v" + AppVersion + " — Tower replaces Relative (classes, stints, damage) · Delta arms from lap 2\r\nEngineer quotes a DEFAULT PLAN when the pit menu is silent · Inputs gains an RPM bar, big gear digit & pit-limiter mode\r\nFlag pill (green/yellow/blue) · Logger auto-records and learns track outlines · New REVIEW tab · Panels resize freely",
+						Text:      "WHAT'S NEW IN v1.3.4 — Barcelona & Paul Ricard join the track table\r\nBrake-bias anchors are now Jett-derived for every car — no more community medians (cars without telemetry are labelled derived)\r\nGenerated setups are now named JETT_{CAR}-Q / JETT_{CAR}-R; older Jett files still move to JettBackups\r\nThe app now checks the JETT Garage repo for updates",
 						TextColor: paper,
 						MaxSize:   Size{Width: 980},
 					},
@@ -879,11 +879,12 @@ func main() {
 			logLine("window icon set failed: " + err.Error())
 		}
 	}
-	// What's New: shown once per feature (x.y.0) release until
-	// dismissed; a missing ack counts as unacknowledged, so the
-	// upgrade itself shows it. Patch bumps never show it.
+	// What's New: shown once, only on the whatsNewFor build, until
+	// dismissed; the ack stores the full version, so a missing or
+	// older ack counts as unacknowledged and the upgrade itself
+	// shows it. Every other version stays quiet.
 	if whatsNewBox != nil {
-		whatsNewBox.SetVisible(isFeatureRelease(AppVersion) && whatsNewAck != versionMinor(AppVersion))
+		whatsNewBox.SetVisible(AppVersion == whatsNewFor && whatsNewAck != AppVersion)
 	}
 	refreshOverlayUI()
 	refreshStatus()
