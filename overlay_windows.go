@@ -80,6 +80,7 @@ const (
 	swShowNoActive   = 4
 	wmPaint          = 0x000F
 	wmLButtonDown    = 0x0201
+	wmRButtonDown    = 0x0204
 	wmLButtonDblClk  = 0x0203
 	wmMouseMove      = 0x0200
 	wmLButtonUp      = 0x0202
@@ -124,25 +125,27 @@ var saveOverlayLayout func()
 
 // renderer state — touched only on the overlay thread.
 var ovR struct {
-	hwnd     uintptr
-	memDC    uintptr
-	bitmap   uintptr
-	oldBmp   uintptr
-	scrW     int
-	scrH     int
-	shown    bool
-	editLive bool // click-through currently removed for MOVE mode
-	brushes  map[uintptr]uintptr
-	fonts    map[int]uintptr
-	rects    map[string]rectT
-	design   map[string][2]int // designed (unscaled) size per panel key
-	dragKey  string
-	dragMode string // "" | "move" | "size"
-	dragDX   int
-	dragDY   int
-	sizeW0   int     // rect width when the resize grab started
-	sizeF0   float64 // scale when the resize grab started
-	maxRPM   float64 // self-calibrated rev ceiling for the RPM bar
+	hwnd      uintptr
+	memDC     uintptr
+	bitmap    uintptr
+	oldBmp    uintptr
+	scrW      int
+	scrH      int
+	shown     bool
+	editLive  bool // click-through currently removed for MOVE mode
+	brushes   map[uintptr]uintptr
+	fonts     map[int]uintptr
+	rects     map[string]rectT
+	design    map[string][2]int // designed (unscaled) size per panel key
+	dragKey   string
+	dragMode  string // "" | "move" | "size"
+	dragDX    int
+	dragDY    int
+	dragOrigX int // panel position when the drag started (right-click cancel)
+	dragOrigY int
+	sizeW0    int     // rect width when the resize grab started
+	sizeF0    float64 // scale when the resize grab started
+	maxRPM    float64 // self-calibrated rev ceiling for the RPM bar
 }
 
 func ovBrush(color uintptr) uintptr {
@@ -392,6 +395,7 @@ var ovWndProc = syscall.NewCallback(func(hwnd, msg, wParam, lParam uintptr) uint
 			if key, corner := ovHitTest(x, y); key != "" {
 				if r, ok := ovR.rects[key]; ok {
 					ovR.dragKey = key
+					ovR.dragOrigX, ovR.dragOrigY = int(r.L), int(r.T)
 					if corner {
 						ovR.dragMode = "size"
 						ovR.sizeW0 = int(r.R - r.L)
@@ -467,6 +471,18 @@ var ovWndProc = syscall.NewCallback(func(hwnd, msg, wParam, lParam uintptr) uint
 		}
 	case wmLButtonUp:
 		if ovR.dragKey != "" {
+			ovEndDrag()
+			return 0
+		}
+	case wmRButtonDown:
+		if ovR.dragKey != "" {
+			// Right-click cancels the drag: the panel goes back to
+			// where it was when the drag started.
+			if ovR.dragMode == "size" {
+				ovSetPanelScale(ovR.dragKey, ovR.sizeF0)
+			} else {
+				ovSetPanelPos(ovR.dragKey, ovR.dragOrigX, ovR.dragOrigY)
+			}
 			ovEndDrag()
 			return 0
 		}

@@ -372,17 +372,24 @@ func teleInstall(lmuPath string) []string {
 	os.MkdirAll(backupDir, 0755)
 	os.WriteFile(filepath.Join(backupDir, "CustomPluginVariables-"+time.Now().Format("20060102-150405")+".JSON"), raw, 0644)
 	newText, changed := ensurePluginEnabled(string(raw))
+	enabled := false
 	if !changed && strings.Contains(string(raw), pluginDLLName) {
 		out = append(out, "Feed already switched on in the game's plugin settings.")
+		enabled = true
 	} else if changed {
 		if err := os.WriteFile(jsonPath, []byte(newText), 0644); err != nil {
 			out = append(out, "Could not update the game's plugin settings: "+err.Error())
 		} else {
 			out = append(out, "Feed switched on in the game's plugin settings (backup saved in UserData\\player\\JettBackups).")
+			enabled = true
 		}
 	} else {
 		out = append(out, "Could not find where to enable the feed in the game's plugin settings — send me a photo of this and I'll sort it.")
 	}
-	out = append(out, "Done. Launch the game, and the live numbers below should wake up in the pits.")
+	if enabled {
+		out = append(out, "", "✓ INSTALL FINISHED — now launch (or restart) Le Mans Ultimate, and the live numbers below should wake up in the pits.")
+	} else {
+		out = append(out, "", "Install NOT finished — the plugin file is in place, but the feed is not switched on yet (see above).")
+	}
 	return out
 }

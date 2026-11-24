@@ -714,7 +714,7 @@ func main() {
 						// Short, manually broken lines: preview1 used one
 						// ~700-character line, whose minimum width dragged
 						// the whole window ultrawide-wide.
-						Text:      "WHAT'S NEW IN v1.3.4 — Barcelona & Paul Ricard join the track table\r\nBrake-bias anchors are now Jett-derived for every car — no more community medians (cars without telemetry are labelled derived)\r\nGenerated setups are now named JETT_{CAR}-Q / JETT_{CAR}-R; older Jett files still move to JettBackups\r\nMOVE PANELS dragging no longer sticks when the cursor leaves a panel\r\nThe app now checks the JETT Garage repo for updates",
+						Text:      "WHAT'S NEW IN v1.3.5 — Bug fixes and small improvements",
 						TextColor: paper,
 						MaxSize:   Size{Width: 980},
 					},

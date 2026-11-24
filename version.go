@@ -24,7 +24,7 @@ func isFeatureRelease(v string) bool {
 // The ack is keyed to the FULL version: the box appears only when the
 // running build is exactly this version and the user hasn't dismissed
 // it for this version. Other versions stay quiet.
-const whatsNewFor = "1.3.4"
+const whatsNewFor = "1.3.5"
 
 // updateRepo is where the app checks for new builds. It is a public
 // repo, so the check and the download need no login.
