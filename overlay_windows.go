@@ -43,6 +43,8 @@ var (
 	pSetWindowLongPtrW = user32.NewProc("SetWindowLongPtrW")
 	pGetDC             = user32.NewProc("GetDC")
 	pReleaseDC         = user32.NewProc("ReleaseDC")
+	pSetCapture        = user32.NewProc("SetCapture")
+	pReleaseCapture    = user32.NewProc("ReleaseCapture")
 	pFillRect          = user32.NewProc("FillRect")
 
 	pCreateCompatibleDC     = gdi32.NewProc("CreateCompatibleDC")
@@ -66,27 +68,29 @@ var (
 )
 
 const (
-	wsPopup         = 0x80000000
-	exLayered       = 0x00080000
-	exTransparent   = 0x00000020
-	exTopmost       = 0x00000008
-	exNoActivate    = 0x08000000
-	exToolWindow    = 0x00000080
-	lwaColorkey     = 0x00000001
-	swHide          = 0
-	swShow          = 5
-	swShowNoActive  = 4
-	wmPaint         = 0x000F
-	wmLButtonDown   = 0x0201
-	wmLButtonDblClk = 0x0203
-	wmMouseMove     = 0x0200
-	wmLButtonUp     = 0x0202
-	srccopy         = 0x00CC0020
-	transparentBk   = 1
-	psSolid         = 0
-	csDblClks       = 0x0008
-	swpNoActivate   = 0x0010
-	swpNoZOrder     = 0x0004
+	wsPopup          = 0x80000000
+	exLayered        = 0x00080000
+	exTransparent    = 0x00000020
+	exTopmost        = 0x00000008
+	exNoActivate     = 0x08000000
+	exToolWindow     = 0x00000080
+	lwaColorkey      = 0x00000001
+	swHide           = 0
+	swShow           = 5
+	swShowNoActive   = 4
+	wmPaint          = 0x000F
+	wmLButtonDown    = 0x0201
+	wmLButtonDblClk  = 0x0203
+	wmMouseMove      = 0x0200
+	wmLButtonUp      = 0x0202
+	wmCaptureChanged = 0x0215
+	mkLButton        = 0x0001
+	srccopy          = 0x00CC0020
+	transparentBk    = 1
+	psSolid          = 0
+	csDblClks        = 0x0008
+	swpNoActivate    = 0x0010
+	swpNoZOrder      = 0x0004
 )
 
 var gwlExStyle = int32(-20) // GWL_EXSTYLE, signed on purpose
@@ -357,6 +361,20 @@ func ovHitTest(x, y int) (string, bool) {
 	return "", false
 }
 
+// ovEndDrag finishes an in-progress panel drag: clears the drag state,
+// releases the mouse capture taken at drag start, and persists the
+// layout. Safe to call when no drag is active.
+func ovEndDrag() {
+	if ovR.dragKey == "" {
+		return
+	}
+	ovR.dragKey, ovR.dragMode = "", ""
+	pReleaseCapture.Call()
+	if saveOverlayLayout != nil {
+		saveOverlayLayout()
+	}
+}
+
 var ovWndProc = syscall.NewCallback(func(hwnd, msg, wParam, lParam uintptr) uintptr {
 	switch msg {
 	case wmPaint:
@@ -383,6 +401,11 @@ var ovWndProc = syscall.NewCallback(func(hwnd, msg, wParam, lParam uintptr) uint
 						ovR.dragDX = x - int(r.L)
 						ovR.dragDY = y - int(r.T)
 					}
+					// Capture the mouse for the whole drag: without it
+					// the drag dies the moment the cursor crosses
+					// another window or outruns the panel, leaving the
+					// panel stranded wherever it lost the cursor.
+					pSetCapture.Call(hwnd)
 				}
 			}
 			return 0
@@ -402,6 +425,13 @@ var ovWndProc = syscall.NewCallback(func(hwnd, msg, wParam, lParam uintptr) uint
 		}
 	case wmMouseMove:
 		if ovR.dragKey != "" {
+			if wParam&mkLButton == 0 {
+				// The button is already up (its release never reached
+				// us): end the drag instead of letting the panel
+				// trail the cursor.
+				ovEndDrag()
+				return 0
+			}
 			x := int(int16(lParam & 0xFFFF))
 			y := int(int16((lParam >> 16) & 0xFFFF))
 			if ovR.dragMode == "size" {
@@ -412,12 +442,39 @@ var ovWndProc = syscall.NewCallback(func(hwnd, msg, wParam, lParam uintptr) uint
 					}
 				}
 			} else {
-				ovSetPanelPos(ovR.dragKey, x-ovR.dragDX, y-ovR.dragDY)
+				nx, ny := x-ovR.dragDX, y-ovR.dragDY
+				// Keep a grabbable slice of the panel on screen while
+				// dragging: a panel pushed fully past an edge is lost
+				// until the next MOVE-mode clamp rescues it.
+				if r, ok := ovR.rects[ovR.dragKey]; ok && ovR.scrW > 0 && ovR.scrH > 0 {
+					w := int(r.R - r.L)
+					if nx < -(w - 48) {
+						nx = -(w - 48)
+					}
+					if nx > ovR.scrW-48 {
+						nx = ovR.scrW - 48
+					}
+					if ny < 0 {
+						ny = 0
+					}
+					if ny > ovR.scrH-32 {
+						ny = ovR.scrH - 32
+					}
+				}
+				ovSetPanelPos(ovR.dragKey, nx, ny)
 			}
 			return 0
 		}
 	case wmLButtonUp:
 		if ovR.dragKey != "" {
+			ovEndDrag()
+			return 0
+		}
+	case wmCaptureChanged:
+		if ovR.dragKey != "" {
+			// Capture was taken from us mid-drag (alt-tab, a system
+			// dialog): drop the drag where it is rather than letting
+			// the panel trail the cursor on the next move.
 			ovR.dragKey, ovR.dragMode = "", ""
 			if saveOverlayLayout != nil {
 				saveOverlayLayout()
